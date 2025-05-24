@@ -1,4 +1,4 @@
-use std::str::EncodeUtf16;
+use std::{fmt::format, str::EncodeUtf16};
 
 use bracket_lib::prelude::*;
 
@@ -39,6 +39,7 @@ impl Player {
         }
 
         self.y += self.v as i32;
+        self.x += 1;
 
         if self.y < 0 {
             self.y = 0;
@@ -67,6 +68,8 @@ struct State{
     mode: GameMode,
     player:Player,
     frame_time:f32, //游戏累计了多少帧以后,共多少时间
+    obstacle: Obstacle,
+    score: i32,
 }
 
 impl State {
@@ -74,7 +77,9 @@ impl State {
         State {
             mode: GameMode::Menu,
             player: Player::new(5, 25, 0.0),
-            frame_time: 0.0
+            frame_time: 0.0,
+            obstacle: Obstacle::new(SCREEN_WIDTH,0),
+            score: 0,
         }
     }
 
@@ -99,8 +104,16 @@ impl State {
 
         self.player.render(ctx);
         ctx.print_centered(SCREEN_HEIGHT - 2,"Press Space to Flap");
+        ctx.print_centered(1,&format!("Score: {}",self.score));
 
-        if self.player.y > SCREEN_HEIGHT{
+        self.obstacle.render(ctx, self.player.x);
+
+        if self.player.x > self.obstacle.x{
+            self.score += 1;
+            self.obstacle = Obstacle::new(self.player.x + SCREEN_WIDTH,self.score);
+        }
+
+        if self.player.y > SCREEN_HEIGHT || self.obstacle.hit_obstacle(&self.player){
             self.mode = GameMode::End;
         }
         
@@ -110,6 +123,8 @@ impl State {
         self.player = Player::new(5, 25, 0.0);
         self.frame_time = 0.0;
         self.mode = GameMode::Playing;
+        self.obstacle = Obstacle::new(SCREEN_WIDTH, 0);
+        self.score = 0;
     }
     fn main_menu(&mut self, ctx: &mut BTerm){
         ctx.cls(); 
@@ -129,6 +144,7 @@ impl State {
     fn dead(&mut self, ctx: &mut BTerm){
         ctx.cls(); 
         ctx.print_centered(5, "Game End");
+        ctx.print_centered(6, &format!("You earned {} points",self.score));
         ctx.print_centered(8, "(P) Play Again");
         ctx.print_centered(9, "(Q) Quit Game");
 
@@ -152,6 +168,46 @@ impl GameState for State{
         GameMode::Playing => self.play(ctx),
     }
    } 
+}
+
+struct Obstacle{
+    x: i32, // x是整个游戏空间的横坐标
+    gap_y: i32,
+    size: i32,
+    // gap_y - (size / 2) to gap_y + (size / 2)
+}
+
+impl Obstacle {
+    fn new(x:i32,score:i32) -> Self{
+        let mut random: RandomNumberGenerator = RandomNumberGenerator::new();
+        Obstacle { 
+            x, 
+            gap_y: (random.range(10,40)), 
+            size: (i32::max(2,20-score)) }
+            //size 的大小会随着积分的提高而减小,但最小不会小于2个单位
+    } 
+
+    fn render(&mut self, ctx: &mut BTerm, player_x: i32){
+        let screen_x = self.x - player_x; //这个是屏幕空间的坐标
+        let half_size = self.size / 2;
+        
+        for y in 0..self.gap_y - half_size {
+            ctx.set(screen_x,y,RED,BLACK,to_cp437('|'));
+        }
+
+        for y in self.gap_y + half_size..SCREEN_HEIGHT {
+            ctx.set(screen_x,y,RED,BLACK,to_cp437('|'));
+        }
+    }
+
+    fn hit_obstacle(&self, player: &Player) -> bool {
+        let half_size = self.size /2;
+        let is_equal_x = player.x == self.x;
+        let is_above_y =  player.y < self.gap_y - half_size;
+        let is_below_y = player.y > self.gap_y + half_size;
+        is_equal_x && (is_above_y || is_below_y)
+
+    }
 }
 fn main() -> BError {
     //游戏终端实例
